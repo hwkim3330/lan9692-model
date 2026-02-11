@@ -546,9 +546,20 @@ def build_board():
 
 
 def main():
-    print("Building EVB-LAN9692-LM 3D model v2...")
+    print("Building EVB-LAN9692-LM 3D model v3 (Y-up fix)...")
     meshes = build_board()
     print(f"  Total mesh parts: {len(meshes)}")
+
+    # ── Convert Z-up (trimesh) → Y-up (GLTF/GLB standard) ──
+    # Rotate -90° around X axis: (x, y, z) → (x, z, -y)
+    # This makes:
+    #   Board XY plane → XZ plane (horizontal in GLTF)
+    #   Z (up) → Y (up in GLTF)
+    #   Y=0 (front/MATEnet edge) → Z=0
+    #   Y=150 (rear/RJ45 edge) → Z=-150
+    rot_to_yup = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
+    for m in meshes:
+        m.apply_transform(rot_to_yup)
 
     scene = trimesh.Scene()
     for i, m in enumerate(meshes):

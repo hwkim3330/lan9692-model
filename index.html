@@ -282,17 +282,19 @@
         let autoRotate = false;
         let originalMaterials = [];
 
-        // Board center for camera targeting
-        const BOARD_CENTER = new THREE.Vector3(107, 75, 5);
+        // Board center (after Z-up → Y-up rotation)
+        // Original (107, 75, 0) → rotated (107, 0, -75)
+        const BOARD_CENTER = new THREE.Vector3(107, 5, -75);
 
         function init() {
             // Scene
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0a0a0f);
 
-            // Camera
+            // Camera - looking down at board from front-above
+            // Like the User Guide Figure 2-1 photo angle
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
-            camera.position.set(107, -120, 180);
+            camera.position.set(107, 150, 120);
 
             // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -336,7 +338,7 @@
 
             // Key light (top-front)
             const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
-            keyLight.position.set(150, -50, 300);
+            keyLight.position.set(150, 300, 100);
             keyLight.castShadow = true;
             keyLight.shadow.mapSize.set(2048, 2048);
             keyLight.shadow.camera.near = 10;
@@ -349,17 +351,17 @@
 
             // Fill light
             const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
-            fillLight.position.set(-100, 100, 100);
+            fillLight.position.set(-100, 150, -50);
             scene.add(fillLight);
 
             // Rim light
             const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
-            rimLight.position.set(100, 200, -50);
+            rimLight.position.set(100, 100, -200);
             scene.add(rimLight);
 
             // Bottom fill
             const bottomLight = new THREE.DirectionalLight(0x444444, 0.2);
-            bottomLight.position.set(0, 0, -100);
+            bottomLight.position.set(0, -100, -75);
             scene.add(bottomLight);
         }
 
@@ -372,14 +374,14 @@
                 metalness: 0.1
             });
             const ground = new THREE.Mesh(groundGeo, groundMat);
-            ground.position.set(107, 75, -2);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.set(107, -2, -75);
             ground.receiveShadow = true;
             scene.add(ground);
 
-            // Grid helper
+            // Grid helper (Y-up, horizontal on XZ plane)
             const grid = new THREE.GridHelper(400, 40, 0x222233, 0x111122);
-            grid.rotation.x = Math.PI / 2;
-            grid.position.set(107, 75, -1.5);
+            grid.position.set(107, -1.5, -75);
             scene.add(grid);
         }
 
@@ -455,7 +457,7 @@
         function animate() {
             requestAnimationFrame(animate);
             if (autoRotate && model) {
-                model.rotation.z += 0.003;
+                model.rotation.y += 0.003;
             }
             controls.update();
             renderer.render(scene, camera);
@@ -472,7 +474,7 @@
             const startPos = camera.position.clone();
             const startTarget = controls.target.clone();
             const endPos = new THREE.Vector3(...pos);
-            const endTarget = target ? new THREE.Vector3(...target) : BOARD_CENTER.clone();
+            const endTarget = target ? new THREE.Vector3(target[0], target[1], target[2]) : BOARD_CENTER.clone();
             const startTime = Date.now();
 
             function update() {
@@ -490,11 +492,13 @@
         }
 
         // Expose functions to window
-        window.resetView = () => animateCamera([107, -120, 180]);
-        window.viewFront = () => animateCamera([107, -100, 30], [107, 20, 5]);
-        window.viewRear = () => animateCamera([107, 260, 30], [107, 150, 5]);
-        window.viewTop = () => animateCamera([107, 75, 250]);
-        window.viewSide = () => animateCamera([320, 75, 50]);
+        // Camera presets matching User Guide photo angles
+        // After Y-up transform: front(MATEnet/SFP+) at Z≈0, rear at Z≈-150
+        window.resetView = () => animateCamera([107, 150, 120], [107, 5, -75]);
+        window.viewFront = () => animateCamera([107, 40, 130], [107, 5, -30]);
+        window.viewRear = () => animateCamera([107, 40, -250], [107, 5, -120]);
+        window.viewTop = () => animateCamera([107, 280, -75], [107, 0, -75]);
+        window.viewSide = () => animateCamera([350, 50, -75], [107, 5, -75]);
 
         window.toggleWireframe = () => {
             wireframeMode = !wireframeMode;
