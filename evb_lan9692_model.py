@@ -78,9 +78,9 @@ def build_board():
     BW, BH, BT = 214.0, 150.0, 1.535
     Z0 = BT / 2  # top surface Z
 
-    # Z-offset to prevent z-fighting: silkscreen/copper sit ABOVE PCB surface
-    ZS = Z0 + 0.08   # silkscreen Z
-    ZC = Z0 + 0.06   # copper pad Z
+    # Z-offsets to prevent z-fighting: generous separation from PCB surface
+    ZS = Z0 + 0.2    # silkscreen Z (well above PCB)
+    ZC = Z0 + 0.12   # copper pad Z
 
     # ════════════════════════════════════════════
     # 1. PCB BASE
@@ -105,16 +105,14 @@ def build_board():
     cx, cy = BW * 0.42, BH * 0.52
     # Package body
     meshes.append(cbox(17, 17, 1.8, C_IC, (cx, cy, Z0 + 0.9)))
-    # Top marking area (lighter)
-    meshes.append(cbox(13, 13, 0.05, C_IC_MARK, (cx, cy, Z0 + 1.83)))
+    # Top marking area (lighter) - single combined layer, no stacking
+    meshes.append(cbox(14, 14, 0.15, C_IC_MARK, (cx, cy, Z0 + 1.85)))
     # Pin-1 dot
-    meshes.append(ccyl(0.7, 0.06, C_SILK, (cx - 6.5, cy + 6.5, Z0 + 1.86), 16))
-    # Text labels (silkscreen bars)
-    meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy + 3, Z0 + 1.86)))
-    meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy - 1, Z0 + 1.86)))
-    meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy - 5, Z0 + 1.86)))
-    # Heatspreader lid effect
-    meshes.append(cbox(15, 15, 0.06, [35, 35, 38, 255], (cx, cy, Z0 + 1.88)))
+    meshes.append(ccyl(0.7, 0.2, C_SILK, (cx - 6.5, cy + 6.5, Z0 + 2.0), 16))
+    # Text labels (raised above marking)
+    meshes.append(cbox(10, 0.6, 0.15, [45, 45, 48, 255], (cx, cy + 3, Z0 + 2.0)))
+    meshes.append(cbox(10, 0.6, 0.15, [45, 45, 48, 255], (cx, cy - 1, Z0 + 2.0)))
+    meshes.append(cbox(10, 0.6, 0.15, [45, 45, 48, 255], (cx, cy - 5, Z0 + 2.0)))
 
     # ════════════════════════════════════════════
     # 4. SILKSCREEN - Microchip logo area
@@ -182,10 +180,10 @@ def build_board():
         meshes.append(cbox(0.6, 1.0, 3.0, C_GOLD,
                           (mx + 1.0, my - matenet_d/2 + 1, Z0 + matenet_h/2 - 0.5)))
 
-        # ── PCB footprint pads (beneath connector) ──
+        # ── PCB footprint pads (behind connector, visible) ──
         for px_off in [-4, -2, 0, 2, 4]:
-            meshes.append(cbox(1.0, 0.6, 0.1, C_COPPER,
-                              (mx + px_off, matenet_d + 1, ZC)))
+            meshes.append(cbox(1.0, 0.6, 0.2, C_COPPER,
+                              (mx + px_off, matenet_d + 1.5, Z0 + 0.15)))
 
         # ── Port number silkscreen ──
         meshes.append(cbox(3, 1.5, 0.08, C_SILK, (mx, matenet_d + 3, ZS)))
@@ -230,21 +228,21 @@ def build_board():
         # Port opening (dark void)
         meshes.append(cbox(sfp_w - 2, 2.5, sfp_h - 3, [15, 15, 15, 255], (sx, -3, sz)))
 
-        # Internal guide rails
-        meshes.append(cbox(sfp_w - 1, sfp_d - 5, 0.3, C_METAL_DARK,
+        # Internal guide rails (narrower than cage, clearly inside)
+        meshes.append(cbox(sfp_w - 2, sfp_d - 8, 0.5, C_METAL_DARK,
                           (sx, sy, Z0 + sfp_h * 0.3)))
-        meshes.append(cbox(sfp_w - 1, sfp_d - 5, 0.3, C_METAL_DARK,
+        meshes.append(cbox(sfp_w - 2, sfp_d - 8, 0.5, C_METAL_DARK,
                           (sx, sy, Z0 + sfp_h * 0.7)))
 
-        # Cage ventilation slots on top
+        # Cage ventilation slots on top (raised above cage top)
         for j in range(5):
-            meshes.append(cbox(sfp_w - 4, 1.5, 0.5, [170, 175, 180, 255],
-                              (sx, sy - sfp_d/4 + j * 8, sz + sfp_h/2 - 0.3)))
+            meshes.append(cbox(sfp_w - 4, 1.5, 0.4, [170, 175, 180, 255],
+                              (sx, sy - sfp_d/4 + j * 8, sz + sfp_h/2 + 0.4)))
 
-        # EMI spring fingers on top edge
+        # EMI spring fingers on front edge (raised above cage)
         for j in range(6):
             meshes.append(cbox(1.0, 0.3, 0.8, C_METAL_DARK,
-                              (sx - sfp_w/3 + j * (sfp_w * 0.6 / 5), -2, sz + sfp_h/2 + 0.3)))
+                              (sx - sfp_w/3 + j * (sfp_w * 0.6 / 5), -2, sz + sfp_h/2 + 0.6)))
 
         # SFP LED (bi-color under cage)
         meshes.append(cbox(1.5, 0.8, 1.0, C_LED_GREEN,
@@ -440,10 +438,8 @@ def build_board():
 
         # QFN package
         meshes.append(cbox(7, 7, 0.9, C_IC, (px, py, Z0 + 0.45)))
-        # Exposed pad (bottom, visible as ground plane)
-        meshes.append(cbox(4.5, 4.5, 0.05, C_COPPER, (px, py, ZS)))
-        # Pin-1 mark
-        meshes.append(ccyl(0.4, 0.06, C_SILK, (px - 2.8, py + 2.8, Z0 + 0.93), 12))
+        # Pin-1 mark (raised well above IC)
+        meshes.append(ccyl(0.4, 0.2, C_SILK, (px - 2.8, py + 2.8, Z0 + 1.0), 12))
 
     # ════════════════════════════════════════════
     # 18. LAN8840 PHY (management port, QFN)
@@ -456,22 +452,22 @@ def build_board():
     # ════════════════════════════════════════════
     # NOR Flash (SOIC-8 or similar)
     meshes.append(cbox(5, 4, 1.2, C_IC, (cx - 22, cy + 12, Z0 + 0.6)))
-    meshes.append(cbox(3.5, 2.5, 0.05, C_IC_MARK, (cx - 22, cy + 12, Z0 + 1.23)))
+    meshes.append(cbox(3.5, 2.5, 0.15, C_IC_MARK, (cx - 22, cy + 12, Z0 + 1.3)))
 
-    # eMMC NAND (BGA)
-    meshes.append(cbox(12, 16, 1.3, C_IC, (cx - 24, cy - 3, Z0 + 0.65)))
-    meshes.append(cbox(9, 12, 0.05, C_IC_MARK, (cx - 24, cy - 3, Z0 + 1.33)))
+    # eMMC NAND footprint (not populated on this board variant)
+    # Just show empty pads
+    meshes.append(cbox(11, 15, 0.15, C_COPPER, (cx - 24, cy - 3, Z0 + 0.12)))
 
     # ════════════════════════════════════════════
     # 20. CLOCK OSCILLATORS
     # ════════════════════════════════════════════
     # 156.25 MHz (SerDes ref clock)
     meshes.append(cbox(5, 3.2, 1.5, C_METAL, (cx + 22, cy + 12, Z0 + 0.75)))
-    meshes.append(cbox(3.5, 1.5, 0.05, [220, 220, 225, 255], (cx + 22, cy + 12, Z0 + 1.53)))
+    meshes.append(cbox(3.5, 1.5, 0.15, [220, 220, 225, 255], (cx + 22, cy + 12, Z0 + 1.6)))
 
     # 25 MHz (PHY ref clock)
     meshes.append(cbox(5, 3.2, 1.5, C_METAL, (cx + 22, cy - 10, Z0 + 0.75)))
-    meshes.append(cbox(3.5, 1.5, 0.05, [220, 220, 225, 255], (cx + 22, cy - 10, Z0 + 1.53)))
+    meshes.append(cbox(3.5, 1.5, 0.15, [220, 220, 225, 255], (cx + 22, cy - 10, Z0 + 1.6)))
 
     # ════════════════════════════════════════════
     # 21. DC/DC CONVERTERS & INDUCTORS
@@ -487,7 +483,7 @@ def build_board():
     for ix, iy, iw, ih, id_ in inductor_pos:
         meshes.append(cbox(iw, ih, id_, C_INDUCTOR, (ix, iy, Z0 + id_/2)))
         # Ferrite top marking
-        meshes.append(cbox(iw - 1, ih - 1, 0.1, [70, 70, 73, 255], (ix, iy, Z0 + id_ + 0.08)))
+        meshes.append(cbox(iw - 1, ih - 1, 0.2, [70, 70, 73, 255], (ix, iy, Z0 + id_ + 0.15)))
 
     # DC/DC converter ICs (near inductors)
     dcdc_pos = [(25, BH - 21), (45, BH - 21), (58, BH - 21)]
@@ -566,13 +562,13 @@ def build_board():
     tp_positions = [(30, 50), (55, 65), (80, 45), (100, 90), (130, 70),
                     (150, 100), (170, 85), (100, 120), (130, 115)]
     for tx, ty in tp_positions:
-        meshes.append(ccyl(0.8, 0.08, C_COPPER, (tx, ty, ZC), 12))
+        meshes.append(ccyl(0.8, 0.2, C_COPPER, (tx, ty, Z0 + 0.3), 12))
 
     # ════════════════════════════════════════════
     # 26. GROUND SHIELD / COPPER POUR (under SFP area)
     # ════════════════════════════════════════════
-    meshes.append(cbox(70, 45, 0.12, [0, 75, 28, 200],
-                      (BW - 42, 32, Z0 + 0.1)))
+    meshes.append(cbox(70, 45, 0.2, [0, 80, 32, 180],
+                      (BW - 42, 32, Z0 + 0.25)))
 
     return meshes
 
