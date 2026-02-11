@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EVB-LAN9692-LM 3D Model Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        canvas { display: block; }
+
+        /* Header overlay */
+        .header {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            padding: 16px 24px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header img {
+            height: 36px;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .header .subtitle {
+            font-size: 12px;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        /* Info panel */
+        .info-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 280px;
+            background: rgba(20, 20, 30, 0.92);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 20px;
+            z-index: 10;
+            backdrop-filter: blur(12px);
+            font-size: 13px;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .info-panel.hidden {
+            transform: translateX(320px);
+            opacity: 0;
+        }
+        .info-panel h3 {
+            font-size: 14px;
+            color: #4fc3f7;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .spec-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        .spec-row .label { color: #888; }
+        .spec-row .value { color: #ddd; font-weight: 500; }
+        .spec-section {
+            margin-top: 14px;
+        }
+        .spec-section h4 {
+            font-size: 12px;
+            color: #81c784;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .port-list {
+            list-style: none;
+            padding: 0;
+        }
+        .port-list li {
+            padding: 3px 0;
+            color: #bbb;
+            font-size: 12px;
+        }
+        .port-list li::before {
+            content: '>';
+            color: #4fc3f7;
+            margin-right: 6px;
+            font-weight: bold;
+        }
+
+        /* Controls bar */
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        .btn {
+            padding: 8px 16px;
+            background: rgba(30, 30, 45, 0.9);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #ccc;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            backdrop-filter: blur(8px);
+            user-select: none;
+        }
+        .btn:hover {
+            background: rgba(50, 50, 70, 0.95);
+            border-color: #4fc3f7;
+            color: #fff;
+        }
+        .btn.active {
+            background: rgba(79, 195, 247, 0.2);
+            border-color: #4fc3f7;
+            color: #4fc3f7;
+        }
+
+        /* Toggle button */
+        .toggle-info {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            z-index: 11;
+        }
+
+        /* Loading */
+        .loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            text-align: center;
+        }
+        .loading .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid #4fc3f7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading.done { display: none; }
+
+        /* Axes labels */
+        .axis-label {
+            position: absolute;
+            font-size: 11px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div style="color:#888; font-size:13px;">Loading EVB-LAN9692-LM...</div>
+        </div>
+
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <h1>EVB-LAN9692-LM</h1>
+                <div class="subtitle">Microchip VelocityDRIVE TSN Evaluation Board | 3D Model Viewer</div>
+            </div>
+        </div>
+
+        <!-- Info Panel -->
+        <div class="info-panel" id="info-panel">
+            <h3>Board Specifications</h3>
+            <div class="spec-row">
+                <span class="label">Dimensions</span>
+                <span class="value">214 x 150 mm</span>
+            </div>
+            <div class="spec-row">
+                <span class="label">PCB Layers</span>
+                <span class="value">4-layer</span>
+            </div>
+            <div class="spec-row">
+                <span class="label">Thickness</span>
+                <span class="value">1.535 mm</span>
+            </div>
+            <div class="spec-row">
+                <span class="label">Main IC</span>
+                <span class="value">LAN9692 FCBGA</span>
+            </div>
+            <div class="spec-row">
+                <span class="label">CPU</span>
+                <span class="value">ARM Cortex-A53 1GHz</span>
+            </div>
+            <div class="spec-row">
+                <span class="label">Power</span>
+                <span class="value">12V DC</span>
+            </div>
+
+            <div class="spec-section">
+                <h4>Front Ports</h4>
+                <ul class="port-list">
+                    <li>7x MATEnet 1000BASE-T1</li>
+                    <li>4x SFP+ 10GBASE-R</li>
+                </ul>
+            </div>
+
+            <div class="spec-section">
+                <h4>Rear Connectors</h4>
+                <ul class="port-list">
+                    <li>1x RJ45 Management (LAN8840)</li>
+                    <li>1x USB-C Serial Console</li>
+                    <li>1x PCIe 2.0 OCuLink</li>
+                    <li>2x SMA (1PPS In/Out)</li>
+                    <li>1x 12V DC Barrel Jack</li>
+                </ul>
+            </div>
+
+            <div class="spec-section">
+                <h4>On-board</h4>
+                <ul class="port-list">
+                    <li>7x LAN8870 T1 PHY</li>
+                    <li>1x LAN8840 Copper PHY</li>
+                    <li>8MB QSPI NOR Flash</li>
+                    <li>4GB eMMC NAND</li>
+                    <li>RPi-compatible Header</li>
+                    <li>JTAG / DIP Switch</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Bottom Controls -->
+        <div class="controls">
+            <div class="btn" onclick="resetView()">Reset View</div>
+            <div class="btn" onclick="viewFront()">Front</div>
+            <div class="btn" onclick="viewRear()">Rear</div>
+            <div class="btn" onclick="viewTop()">Top</div>
+            <div class="btn" onclick="viewSide()">Side</div>
+            <div class="btn" onclick="toggleWireframe()" id="btn-wire">Wireframe</div>
+            <div class="btn" onclick="toggleInfo()" id="btn-info">Info</div>
+            <div class="btn" onclick="toggleAutoRotate()" id="btn-rotate">Auto Rotate</div>
+        </div>
+    </div>
+
+    <!-- Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        let scene, camera, renderer, controls, model;
+        let wireframeMode = false;
+        let autoRotate = false;
+        let originalMaterials = [];
+
+        // Board center for camera targeting
+        const BOARD_CENTER = new THREE.Vector3(107, 75, 5);
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0f);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(107, -150, 200);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.copy(BOARD_CENTER);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.minDistance = 50;
+            controls.maxDistance = 800;
+            controls.update();
+
+            // Lighting
+            setupLighting();
+
+            // Grid
+            setupGrid();
+
+            // Load model
+            loadModel();
+
+            // Events
+            window.addEventListener('resize', onResize);
+
+            // Animate
+            animate();
+        }
+
+        function setupLighting() {
+            // Ambient
+            const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambient);
+
+            // Key light (top-front)
+            const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            keyLight.position.set(150, -50, 300);
+            keyLight.castShadow = true;
+            keyLight.shadow.mapSize.set(2048, 2048);
+            keyLight.shadow.camera.near = 10;
+            keyLight.shadow.camera.far = 600;
+            keyLight.shadow.camera.left = -150;
+            keyLight.shadow.camera.right = 150;
+            keyLight.shadow.camera.top = 150;
+            keyLight.shadow.camera.bottom = -150;
+            scene.add(keyLight);
+
+            // Fill light
+            const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+            fillLight.position.set(-100, 100, 100);
+            scene.add(fillLight);
+
+            // Rim light
+            const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            rimLight.position.set(100, 200, -50);
+            scene.add(rimLight);
+
+            // Bottom fill
+            const bottomLight = new THREE.DirectionalLight(0x444444, 0.2);
+            bottomLight.position.set(0, 0, -100);
+            scene.add(bottomLight);
+        }
+
+        function setupGrid() {
+            // Ground plane
+            const groundGeo = new THREE.PlaneGeometry(600, 600);
+            const groundMat = new THREE.MeshStandardMaterial({
+                color: 0x080810,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.position.set(107, 75, -2);
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Grid helper
+            const grid = new THREE.GridHelper(400, 40, 0x222233, 0x111122);
+            grid.rotation.x = Math.PI / 2;
+            grid.position.set(107, 75, -1.5);
+            scene.add(grid);
+        }
+
+        function loadModel() {
+            const loader = new GLTFLoader();
+            loader.load(
+                'EVB-LAN9692-LM.glb',
+                (gltf) => {
+                    model = gltf.scene;
+
+                    // Enhance materials
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+
+                            // Store original material
+                            originalMaterials.push({
+                                mesh: child,
+                                material: child.material.clone()
+                            });
+
+                            // Enhance material properties
+                            if (child.material.color) {
+                                const color = child.material.color;
+                                const r = color.r, g = color.g, b = color.b;
+
+                                // Green PCB
+                                if (g > r * 1.5 && g > b * 1.5) {
+                                    child.material.roughness = 0.6;
+                                    child.material.metalness = 0.05;
+                                }
+                                // Metal parts (silver/gray)
+                                else if (r > 0.6 && g > 0.6 && b > 0.6) {
+                                    child.material.roughness = 0.3;
+                                    child.material.metalness = 0.7;
+                                }
+                                // Gold (SMA, pins)
+                                else if (r > 0.7 && g > 0.5 && b < 0.3) {
+                                    child.material.roughness = 0.2;
+                                    child.material.metalness = 0.9;
+                                }
+                                // Dark IC packages
+                                else if (r < 0.2 && g < 0.2 && b < 0.2) {
+                                    child.material.roughness = 0.8;
+                                    child.material.metalness = 0.1;
+                                }
+                                // LEDs - add emissive
+                                if ((g > 0.8 && r < 0.3 && b < 0.3) ||
+                                    (r > 0.8 && g > 0.5 && b < 0.2) ||
+                                    (r > 0.8 && g > 0.8 && b < 0.3)) {
+                                    child.material.emissive = color.clone();
+                                    child.material.emissiveIntensity = 0.3;
+                                }
+                            }
+                        }
+                    });
+
+                    scene.add(model);
+                    document.getElementById('loading').classList.add('done');
+                },
+                (progress) => {
+                    // Progress
+                },
+                (error) => {
+                    console.error('Error loading model:', error);
+                    document.getElementById('loading').innerHTML =
+                        '<div style="color:#f44;">Failed to load model</div>';
+                }
+            );
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (autoRotate && model) {
+                model.rotation.z += 0.003;
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // === Camera Views ===
+        function animateCamera(pos, target, duration = 800) {
+            const startPos = camera.position.clone();
+            const startTarget = controls.target.clone();
+            const endPos = new THREE.Vector3(...pos);
+            const endTarget = target ? new THREE.Vector3(...target) : BOARD_CENTER.clone();
+            const startTime = Date.now();
+
+            function update() {
+                const elapsed = Date.now() - startTime;
+                const t = Math.min(elapsed / duration, 1);
+                const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+                camera.position.lerpVectors(startPos, endPos, ease);
+                controls.target.lerpVectors(startTarget, endTarget, ease);
+                controls.update();
+
+                if (t < 1) requestAnimationFrame(update);
+            }
+            update();
+        }
+
+        // Expose functions to window
+        window.resetView = () => animateCamera([107, -150, 200]);
+        window.viewFront = () => animateCamera([107, -180, 40], [107, 0, 5]);
+        window.viewRear = () => animateCamera([107, 330, 40], [107, 150, 5]);
+        window.viewTop = () => animateCamera([107, 75, 280]);
+        window.viewSide = () => animateCamera([350, 75, 60]);
+
+        window.toggleWireframe = () => {
+            wireframeMode = !wireframeMode;
+            const btn = document.getElementById('btn-wire');
+            btn.classList.toggle('active', wireframeMode);
+
+            if (model) {
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.wireframe = wireframeMode;
+                    }
+                });
+            }
+        };
+
+        window.toggleInfo = () => {
+            const panel = document.getElementById('info-panel');
+            panel.classList.toggle('hidden');
+            document.getElementById('btn-info').classList.toggle('active',
+                !panel.classList.contains('hidden'));
+        };
+
+        window.toggleAutoRotate = () => {
+            autoRotate = !autoRotate;
+            document.getElementById('btn-rotate').classList.toggle('active', autoRotate);
+        };
+
+        // Init
+        init();
+    </script>
+</body>
+</html>
