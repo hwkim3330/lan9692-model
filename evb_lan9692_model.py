@@ -78,16 +78,15 @@ def build_board():
     BW, BH, BT = 214.0, 150.0, 1.535
     Z0 = BT / 2  # top surface Z
 
+    # Z-offset to prevent z-fighting: silkscreen/copper sit ABOVE PCB surface
+    ZS = Z0 + 0.08   # silkscreen Z
+    ZC = Z0 + 0.06   # copper pad Z
+
     # ════════════════════════════════════════════
     # 1. PCB BASE
     # ════════════════════════════════════════════
     pcb = cbox(BW, BH, BT, C_PCB_TOP, (BW/2, BH/2, 0))
     meshes.append(pcb)
-
-    # Slight bevel edges (thin strips on PCB edge to show laminate)
-    for side in [(BW/2, 0, 0, BW, 0.3, BT), (BW/2, BH, 0, BW, 0.3, BT),
-                 (0, BH/2, 0, 0.3, BH, BT), (BW, BH/2, 0, 0.3, BH, BT)]:
-        meshes.append(cbox(side[3], side[4], side[5], C_PCB_SIDE, (side[0], side[1], side[2])))
 
     # ════════════════════════════════════════════
     # 2. MOUNTING HOLES (4 corners)
@@ -95,10 +94,10 @@ def build_board():
     hole_inset = 5.0
     for hx, hy in [(hole_inset, hole_inset), (BW - hole_inset, hole_inset),
                     (hole_inset, BH - hole_inset), (BW - hole_inset, BH - hole_inset)]:
-        # Copper annular ring
-        meshes.append(ccyl(3.5, BT + 0.15, C_HOLE_PAD, (hx, hy, 0)))
-        # Hole (dark)
-        meshes.append(ccyl(1.6, BT + 0.3, [20, 20, 20, 255], (hx, hy, 0)))
+        # Copper annular ring - raised above PCB
+        meshes.append(ccyl(3.5, 0.15, C_HOLE_PAD, (hx, hy, Z0 + 0.1)))
+        # Hole (dark) - raised to avoid z-fight
+        meshes.append(ccyl(1.6, 0.3, [20, 20, 20, 255], (hx, hy, Z0 + 0.15)))
 
     # ════════════════════════════════════════════
     # 3. LAN9692 MAIN IC (center, FCBGA 17x17mm)
@@ -115,51 +114,84 @@ def build_board():
     meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy - 1, Z0 + 1.86)))
     meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy - 5, Z0 + 1.86)))
     # Heatspreader lid effect
-    meshes.append(cbox(15, 15, 0.03, [35, 35, 38, 255], (cx, cy, Z0 + 1.86)))
+    meshes.append(cbox(15, 15, 0.06, [35, 35, 38, 255], (cx, cy, Z0 + 1.88)))
 
     # ════════════════════════════════════════════
     # 4. SILKSCREEN - Microchip logo area
     # ════════════════════════════════════════════
-    meshes.append(cbox(30, 6, 0.04, C_SILK, (32, BH - 18, Z0 + 0.02)))
-    meshes.append(cbox(22, 3, 0.04, C_SILK, (32, BH - 24, Z0 + 0.02)))
+    meshes.append(cbox(30, 6, 0.1, C_SILK, (32, BH - 18, ZS)))
+    meshes.append(cbox(22, 3, 0.1, C_SILK, (32, BH - 24, ZS)))
     # Board name
-    meshes.append(cbox(25, 2.5, 0.04, C_SILK, (32, BH - 29, Z0 + 0.02)))
+    meshes.append(cbox(25, 2.5, 0.1, C_SILK, (32, BH - 29, ZS)))
 
     # ════════════════════════════════════════════
     # 5. 7x MATEnet CONNECTORS (front/bottom edge)
-    #    Automotive single-pair 1000BASE-T1
+    #    TE Connectivity MATEnet, automotive single-pair 1000BASE-T1
+    #    Compact gray housing with top latch, narrow cable slot
     # ════════════════════════════════════════════
-    matenet_w = 12.0    # connector width
-    matenet_d = 10.0    # depth into board
-    matenet_h = 10.0    # height above PCB
+    matenet_w = 11.5    # connector body width
+    matenet_d = 9.5     # depth (front-to-back)
+    matenet_h = 8.5     # height above PCB
     matenet_spacing = 19.0
     matenet_x0 = 15.0
+    C_MATENET = [160, 162, 158, 255]      # Light warm gray (MATEnet housing)
+    C_MATENET_DARK = [120, 122, 118, 255] # Slightly darker for recesses
 
     for i in range(7):
         mx = matenet_x0 + i * matenet_spacing
-        my = matenet_d / 2 - 1  # slightly overhanging edge
+        my = matenet_d / 2 - 2  # overhangs front edge
 
-        # Main housing (dark gray plastic)
-        meshes.append(cbox(matenet_w, matenet_d, matenet_h, C_PLASTIC_GRY,
+        # ── Main body (light gray plastic) ──
+        meshes.append(cbox(matenet_w, matenet_d, matenet_h, C_MATENET,
                           (mx, my, Z0 + matenet_h/2)))
-        # Front face detail (port opening)
-        meshes.append(cbox(matenet_w - 3, 1.5, matenet_h - 3, [40, 40, 43, 255],
-                          (mx, -0.5, Z0 + matenet_h/2)))
-        # Metal latch tabs on sides
-        meshes.append(cbox(0.5, matenet_d - 2, matenet_h - 1, C_METAL_DARK,
-                          (mx - matenet_w/2 + 0.5, my, Z0 + matenet_h/2)))
-        meshes.append(cbox(0.5, matenet_d - 2, matenet_h - 1, C_METAL_DARK,
-                          (mx + matenet_w/2 - 0.5, my, Z0 + matenet_h/2)))
-        # Top surface detail
-        meshes.append(cbox(matenet_w - 1, matenet_d - 1, 0.3, [80, 82, 85, 255],
-                          (mx, my, Z0 + matenet_h - 0.15)))
 
-        # Port number silkscreen
-        meshes.append(cbox(3, 1.5, 0.04, C_SILK,
-                          (mx, matenet_d + 2, Z0 + 0.02)))
+        # ── Front face: recessed cable entry slot ──
+        slot_w = 5.0   # narrow slot
+        slot_h = 4.5
+        meshes.append(cbox(slot_w, 1.8, slot_h, [30, 30, 32, 255],
+                          (mx, my - matenet_d/2 + 0.5, Z0 + matenet_h/2 - 0.5)))
 
-        # Status LEDs (1G green + 100M orange) behind connector
-        led_y = matenet_d + 5
+        # ── Front face frame (raised border around slot) ──
+        # Top bar
+        meshes.append(cbox(matenet_w - 1, 0.6, 1.0, C_MATENET_DARK,
+                          (mx, my - matenet_d/2 + 0.3, Z0 + matenet_h - 1.0)))
+        # Bottom bar
+        meshes.append(cbox(matenet_w - 1, 0.6, 0.8, C_MATENET_DARK,
+                          (mx, my - matenet_d/2 + 0.3, Z0 + 1.5)))
+        # Side pillars
+        for sx in [-1, 1]:
+            meshes.append(cbox(1.5, 0.6, matenet_h - 2, C_MATENET_DARK,
+                              (mx + sx * (matenet_w/2 - 1.5), my - matenet_d/2 + 0.3, Z0 + matenet_h/2)))
+
+        # ── Top latch (characteristic MATEnet feature) ──
+        meshes.append(cbox(6, matenet_d - 2, 1.2, [140, 142, 138, 255],
+                          (mx, my + 0.5, Z0 + matenet_h + 0.3)))
+        # Latch ridge
+        meshes.append(cbox(4, 1.5, 0.6, [130, 132, 128, 255],
+                          (mx, my - matenet_d/4, Z0 + matenet_h + 0.9)))
+
+        # ── Side ribs (grip texture) ──
+        for sx in [-1, 1]:
+            for r in range(3):
+                meshes.append(cbox(0.4, matenet_d - 3, 0.8, [145, 147, 143, 255],
+                                  (mx + sx * (matenet_w/2 + 0.15), my + 0.5, Z0 + 2.5 + r * 2.5)))
+
+        # ── Internal contact pins visible in slot ──
+        meshes.append(cbox(0.6, 1.0, 3.0, C_GOLD,
+                          (mx - 1.0, my - matenet_d/2 + 1, Z0 + matenet_h/2 - 0.5)))
+        meshes.append(cbox(0.6, 1.0, 3.0, C_GOLD,
+                          (mx + 1.0, my - matenet_d/2 + 1, Z0 + matenet_h/2 - 0.5)))
+
+        # ── PCB footprint pads (beneath connector) ──
+        for px_off in [-4, -2, 0, 2, 4]:
+            meshes.append(cbox(1.0, 0.6, 0.1, C_COPPER,
+                              (mx + px_off, matenet_d + 1, ZC)))
+
+        # ── Port number silkscreen ──
+        meshes.append(cbox(3, 1.5, 0.08, C_SILK, (mx, matenet_d + 3, ZS)))
+
+        # ── Status LEDs (1G green + 100M orange) behind connector ──
+        led_y = matenet_d + 5.5
         meshes.append(cbox(1.6, 0.8, 1.0, C_LED_GREEN,
                           (mx - 3.5, led_y, Z0 + 0.5)))
         meshes.append(cbox(1.6, 0.8, 1.0, C_LED_ORANGE,
@@ -333,7 +365,7 @@ def build_board():
         # Board-side flange
         meshes.append(cbox(8, 3, 8, C_PCB_TOP, (sma_x, BH - 1, Z0 + 4)))
         # Silkscreen label
-        meshes.append(cbox(4, 1.5, 0.04, C_SILK, (sma_x, BH - 5, Z0 + 0.02)))
+        meshes.append(cbox(4, 1.5, 0.1, C_SILK, (sma_x, BH - 5, ZS)))
 
     # ════════════════════════════════════════════
     # 12. PCIe 2.0 OCuLink CONNECTOR (rear)
@@ -371,7 +403,7 @@ def build_board():
         meshes.append(cbox(1.8, 2.0, 1.5, [230, 230, 235, 255],
                           (dip_x - 4 + i * 2.54, dip_y, Z0 + 3.6)))
     # Label
-    meshes.append(cbox(8, 1, 0.04, C_SILK, (dip_x, dip_y - 4, Z0 + 0.02)))
+    meshes.append(cbox(8, 1, 0.1, C_SILK, (dip_x, dip_y - 4, ZS)))
 
     # ════════════════════════════════════════════
     # 15. EXPANSION HEADER (2x20, RPi compatible)
@@ -409,7 +441,7 @@ def build_board():
         # QFN package
         meshes.append(cbox(7, 7, 0.9, C_IC, (px, py, Z0 + 0.45)))
         # Exposed pad (bottom, visible as ground plane)
-        meshes.append(cbox(4.5, 4.5, 0.05, C_COPPER, (px, py, Z0 + 0.02)))
+        meshes.append(cbox(4.5, 4.5, 0.05, C_COPPER, (px, py, ZS)))
         # Pin-1 mark
         meshes.append(ccyl(0.4, 0.06, C_SILK, (px - 2.8, py + 2.8, Z0 + 0.93), 12))
 
@@ -455,7 +487,7 @@ def build_board():
     for ix, iy, iw, ih, id_ in inductor_pos:
         meshes.append(cbox(iw, ih, id_, C_INDUCTOR, (ix, iy, Z0 + id_/2)))
         # Ferrite top marking
-        meshes.append(cbox(iw - 1, ih - 1, 0.05, [70, 70, 73, 255], (ix, iy, Z0 + id_ + 0.02)))
+        meshes.append(cbox(iw - 1, ih - 1, 0.1, [70, 70, 73, 255], (ix, iy, Z0 + id_ + 0.08)))
 
     # DC/DC converter ICs (near inductors)
     dcdc_pos = [(25, BH - 21), (45, BH - 21), (58, BH - 21)]
@@ -511,7 +543,7 @@ def build_board():
         lx = BW - 50 + i * 6
         ly = BH - 10
         meshes.append(cbox(1.5, 0.8, 1.0, C_LED_GREEN, (lx, ly, Z0 + 0.5)))
-        meshes.append(cbox(3, 1, 0.04, C_SILK, (lx, ly - 2, Z0 + 0.02)))
+        meshes.append(cbox(3, 1, 0.1, C_SILK, (lx, ly - 2, ZS)))
 
     # Board status LEDs (green + yellow)
     meshes.append(cbox(1.5, 0.8, 1.0, C_LED_GREEN, (rst_x - 8, rst_y, Z0 + 0.5)))
@@ -523,24 +555,24 @@ def build_board():
     # Component outlines near chips
     for i in range(7):
         px = matenet_x0 + i * matenet_spacing
-        meshes.append(cbox(8, 0.15, 0.04, C_SILK, (px, 28, Z0 + 0.02)))
-        meshes.append(cbox(8, 0.15, 0.04, C_SILK, (px, 36, Z0 + 0.02)))
+        meshes.append(cbox(8, 0.15, 0.1, C_SILK, (px, 28, ZS)))
+        meshes.append(cbox(8, 0.15, 0.1, C_SILK, (px, 36, ZS)))
 
     # Board outline marking
-    meshes.append(cbox(BW - 20, 0.2, 0.04, C_SILK, (BW/2, 12, Z0 + 0.02)))
-    meshes.append(cbox(0.2, 30, 0.04, C_SILK, (10, BH/2, Z0 + 0.02)))
+    meshes.append(cbox(BW - 20, 0.2, 0.1, C_SILK, (BW/2, 12, ZS)))
+    meshes.append(cbox(0.2, 30, 0.1, C_SILK, (10, BH/2, ZS)))
 
     # Test points (scattered copper dots)
     tp_positions = [(30, 50), (55, 65), (80, 45), (100, 90), (130, 70),
                     (150, 100), (170, 85), (100, 120), (130, 115)]
     for tx, ty in tp_positions:
-        meshes.append(ccyl(0.8, 0.08, C_COPPER, (tx, ty, Z0 + 0.04), 12))
+        meshes.append(ccyl(0.8, 0.08, C_COPPER, (tx, ty, ZC), 12))
 
     # ════════════════════════════════════════════
     # 26. GROUND SHIELD / COPPER POUR (under SFP area)
     # ════════════════════════════════════════════
-    meshes.append(cbox(70, 45, 0.04, [0, 75, 28, 200],
-                      (BW - 42, 32, Z0 + 0.02)))
+    meshes.append(cbox(70, 45, 0.12, [0, 75, 28, 200],
+                      (BW - 42, 32, Z0 + 0.1)))
 
     return meshes
 
