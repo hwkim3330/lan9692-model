@@ -1,390 +1,568 @@
 #!/usr/bin/env python3
 """
-EVB-LAN9692-LM 3D Board Model Generator
-Generates a GLB model based on the Hardware User's Guide (DS50003848B)
+EVB-LAN9692-LM 3D Board Model Generator v2
+More detailed and realistic model based on Hardware User's Guide (DS50003848B)
 Board: 214 x 150 mm, 4-layer PCB, 1.535mm thick
 """
 
 import trimesh
 import numpy as np
+from trimesh.creation import box, cylinder
 
-def create_box(width, height, depth, color, position=(0, 0, 0)):
-    """Create a colored box at position (center-based)"""
-    mesh = trimesh.creation.box(extents=[width, height, depth])
-    mesh.apply_translation(position)
-    mesh.visual.face_colors = color
-    return mesh
 
-def create_cylinder(radius, height, color, position=(0, 0, 0), sections=32):
-    """Create a colored cylinder at position"""
-    mesh = trimesh.creation.cylinder(radius=radius, height=height, sections=sections)
-    mesh.apply_translation(position)
-    mesh.visual.face_colors = color
-    return mesh
+# ── Color Palette ──
+C_PCB_TOP     = [0, 85, 30, 255]       # Dark green solder mask
+C_PCB_SIDE    = [0, 70, 25, 255]       # PCB edge (slightly darker)
+C_PCB_BOTTOM  = [0, 75, 28, 255]
+C_COPPER      = [180, 155, 80, 255]    # Exposed copper/ENIG gold
+C_SILK        = [240, 240, 230, 255]   # White silkscreen
+C_IC          = [25, 25, 28, 255]      # IC package matte black
+C_IC_MARK     = [55, 55, 58, 255]      # IC top marking
+C_METAL       = [195, 200, 205, 255]   # Connector metal shell
+C_METAL_DARK  = [140, 145, 150, 255]   # Darker metal
+C_PLASTIC_BLK = [35, 35, 38, 255]     # Black plastic housing
+C_PLASTIC_GRY = [90, 92, 95, 255]     # Gray plastic
+C_GOLD        = [210, 175, 55, 255]    # Gold pins/SMA
+C_SMA_GOLD    = [200, 165, 40, 255]
+C_LED_GREEN   = [30, 220, 50, 230]
+C_LED_ORANGE  = [240, 160, 20, 230]
+C_LED_YELLOW  = [240, 230, 30, 230]
+C_LED_RED     = [220, 40, 30, 230]
+C_RED_SW      = [180, 40, 35, 255]    # Red DIP switch / button
+C_USB_METAL   = [200, 200, 205, 255]
+C_CAP_BROWN   = [100, 70, 40, 255]    # MLCC capacitor
+C_CAP_GRAY    = [75, 75, 78, 255]     # Tantalum cap
+C_INDUCTOR    = [50, 50, 52, 255]     # Power inductor
+C_HOLE_PAD    = [180, 160, 90, 255]   # Mounting hole pad
+C_BARREL      = [45, 45, 48, 255]     # Barrel jack
 
-def create_mounting_hole(radius, height, position):
-    """Create a mounting hole ring"""
-    outer = trimesh.creation.cylinder(radius=radius + 0.8, height=height + 0.1, sections=32)
-    inner = trimesh.creation.cylinder(radius=radius, height=height + 0.5, sections=32)
-    ring = outer.difference(inner) if hasattr(outer, 'difference') else outer
-    ring.apply_translation(position)
-    ring.visual.face_colors = [192, 192, 192, 255]  # Silver
-    return ring
+
+def cbox(w, h, d, color, pos=(0, 0, 0)):
+    """Create colored box at center position"""
+    m = box(extents=[w, h, d])
+    m.apply_translation(pos)
+    m.visual.face_colors = color
+    return m
+
+
+def ccyl(r, h, color, pos=(0, 0, 0), sec=24):
+    """Create colored cylinder at position"""
+    m = cylinder(radius=r, height=h, sections=sec)
+    m.apply_translation(pos)
+    m.visual.face_colors = color
+    return m
+
+
+def hollow_box(outer_w, outer_h, outer_d, wall, color, pos=(0, 0, 0)):
+    """Create a hollow box (shell) - approximated with 5 faces"""
+    parts = []
+    ow, oh, od = outer_w, outer_h, outer_d
+    x, y, z = pos
+    # Top
+    parts.append(cbox(ow, oh, wall, color, (x, y, z + od/2 - wall/2)))
+    # Bottom
+    parts.append(cbox(ow, oh, wall, color, (x, y, z - od/2 + wall/2)))
+    # Left
+    parts.append(cbox(wall, oh, od, color, (x - ow/2 + wall/2, y, z)))
+    # Right
+    parts.append(cbox(wall, oh, od, color, (x + ow/2 - wall/2, y, z)))
+    # Back
+    parts.append(cbox(ow, wall, od, color, (x, y + oh/2 - wall/2, z)))
+    return parts
+
 
 def build_board():
     meshes = []
 
-    # === Board dimensions (mm) ===
-    BW = 214.0   # width (X)
-    BH = 150.0   # height (Y)
-    BT = 1.535    # thickness (Z)
+    # ── Board constants ──
+    BW, BH, BT = 214.0, 150.0, 1.535
+    Z0 = BT / 2  # top surface Z
 
-    # PCB base - green
-    pcb = create_box(BW, BH, BT, [0, 100, 0, 255], position=(BW/2, BH/2, 0))
+    # ════════════════════════════════════════════
+    # 1. PCB BASE
+    # ════════════════════════════════════════════
+    pcb = cbox(BW, BH, BT, C_PCB_TOP, (BW/2, BH/2, 0))
     meshes.append(pcb)
 
-    # PCB top copper layer hint (slightly darker green)
-    pcb_top = create_box(BW - 1, BH - 1, 0.05, [0, 80, 0, 255], position=(BW/2, BH/2, BT/2 + 0.025))
-    meshes.append(pcb_top)
+    # Slight bevel edges (thin strips on PCB edge to show laminate)
+    for side in [(BW/2, 0, 0, BW, 0.3, BT), (BW/2, BH, 0, BW, 0.3, BT),
+                 (0, BH/2, 0, 0.3, BH, BT), (BW, BH/2, 0, 0.3, BH, BT)]:
+        meshes.append(cbox(side[3], side[4], side[5], C_PCB_SIDE, (side[0], side[1], side[2])))
 
-    # Silkscreen area (white text area - Microchip logo region)
-    silk = create_box(35, 12, 0.05, [255, 255, 255, 200], position=(35, BH - 20, BT/2 + 0.06))
-    meshes.append(silk)
+    # ════════════════════════════════════════════
+    # 2. MOUNTING HOLES (4 corners)
+    # ════════════════════════════════════════════
+    hole_inset = 5.0
+    for hx, hy in [(hole_inset, hole_inset), (BW - hole_inset, hole_inset),
+                    (hole_inset, BH - hole_inset), (BW - hole_inset, BH - hole_inset)]:
+        # Copper annular ring
+        meshes.append(ccyl(3.5, BT + 0.15, C_HOLE_PAD, (hx, hy, 0)))
+        # Hole (dark)
+        meshes.append(ccyl(1.6, BT + 0.3, [20, 20, 20, 255], (hx, hy, 0)))
 
-    # === Mounting holes (4 corners) ===
-    hole_r = 1.6
-    hole_offset = 5.0
-    hole_positions = [
-        (hole_offset, hole_offset, 0),
-        (BW - hole_offset, hole_offset, 0),
-        (hole_offset, BH - hole_offset, 0),
-        (BW - hole_offset, BH - hole_offset, 0),
-    ]
-    for pos in hole_positions:
-        pad = create_cylinder(3.0, BT + 0.1, [192, 192, 192, 255], pos)
-        meshes.append(pad)
-        hole = create_cylinder(hole_r, BT + 0.3, [40, 40, 40, 255], pos)
-        meshes.append(hole)
+    # ════════════════════════════════════════════
+    # 3. LAN9692 MAIN IC (center, FCBGA 17x17mm)
+    # ════════════════════════════════════════════
+    cx, cy = BW * 0.42, BH * 0.52
+    # Package body
+    meshes.append(cbox(17, 17, 1.8, C_IC, (cx, cy, Z0 + 0.9)))
+    # Top marking area (lighter)
+    meshes.append(cbox(13, 13, 0.05, C_IC_MARK, (cx, cy, Z0 + 1.83)))
+    # Pin-1 dot
+    meshes.append(ccyl(0.7, 0.06, C_SILK, (cx - 6.5, cy + 6.5, Z0 + 1.86), 16))
+    # Text labels (silkscreen bars)
+    meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy + 3, Z0 + 1.86)))
+    meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy - 1, Z0 + 1.86)))
+    meshes.append(cbox(10, 0.6, 0.05, [45, 45, 48, 255], (cx, cy - 5, Z0 + 1.86)))
+    # Heatspreader lid effect
+    meshes.append(cbox(15, 15, 0.03, [35, 35, 38, 255], (cx, cy, Z0 + 1.86)))
 
-    # === LAN9692 Main IC (FCBGA 17x17mm, center of board) ===
-    chip_x = BW * 0.42
-    chip_y = BH * 0.55
-    chip_z = BT/2 + 1.0
-    # BGA package
-    lan9692 = create_box(17, 17, 2.0, [30, 30, 30, 255], position=(chip_x, chip_y, chip_z))
-    meshes.append(lan9692)
-    # Chip top marking
-    chip_label = create_box(12, 12, 0.05, [60, 60, 60, 255], position=(chip_x, chip_y, chip_z + 1.025))
-    meshes.append(chip_label)
-    # Die dot
-    chip_dot = create_cylinder(0.8, 0.1, [255, 255, 255, 200], (chip_x - 5, chip_y + 5, chip_z + 1.06))
-    meshes.append(chip_dot)
+    # ════════════════════════════════════════════
+    # 4. SILKSCREEN - Microchip logo area
+    # ════════════════════════════════════════════
+    meshes.append(cbox(30, 6, 0.04, C_SILK, (32, BH - 18, Z0 + 0.02)))
+    meshes.append(cbox(22, 3, 0.04, C_SILK, (32, BH - 24, Z0 + 0.02)))
+    # Board name
+    meshes.append(cbox(25, 2.5, 0.04, C_SILK, (32, BH - 29, Z0 + 0.02)))
 
-    # === 7x MATEnet connectors (front bottom edge, left 2/3) ===
-    # MATEnet (1000BASE-T1) - automotive single-pair connectors
-    matenet_w = 14.0
-    matenet_h = 12.0
-    matenet_d = 10.0
-    matenet_spacing = 20.5
-    matenet_start_x = 18.0
-    matenet_y = -matenet_h/2 + 2  # overhanging front edge
+    # ════════════════════════════════════════════
+    # 5. 7x MATEnet CONNECTORS (front/bottom edge)
+    #    Automotive single-pair 1000BASE-T1
+    # ════════════════════════════════════════════
+    matenet_w = 12.0    # connector width
+    matenet_d = 10.0    # depth into board
+    matenet_h = 10.0    # height above PCB
+    matenet_spacing = 19.0
+    matenet_x0 = 15.0
 
     for i in range(7):
-        x = matenet_start_x + i * matenet_spacing
-        z = BT/2 + matenet_d/2
-        # Connector housing (dark gray plastic)
-        conn = create_box(matenet_w, matenet_h, matenet_d, [50, 50, 50, 255],
-                         position=(x, matenet_y, z))
-        meshes.append(conn)
-        # Metal shell top
-        shell = create_box(matenet_w + 0.5, 0.3, matenet_d, [180, 180, 180, 255],
-                          position=(x, matenet_y + matenet_h/2, z))
-        meshes.append(shell)
-        # Port opening
-        opening = create_box(matenet_w - 4, 2, matenet_d - 3, [20, 20, 20, 255],
-                            position=(x, matenet_y - matenet_h/2 + 1, z))
-        meshes.append(opening)
-        # Status LEDs behind each connector (green + orange)
-        led_z = BT/2 + 1.0
-        led_g = create_box(1.5, 1.0, 1.5, [0, 255, 0, 200],
-                          position=(x - 3, matenet_y + matenet_h/2 + 3, led_z))
-        meshes.append(led_g)
-        led_o = create_box(1.5, 1.0, 1.5, [255, 165, 0, 200],
-                          position=(x + 3, matenet_y + matenet_h/2 + 3, led_z))
-        meshes.append(led_o)
+        mx = matenet_x0 + i * matenet_spacing
+        my = matenet_d / 2 - 1  # slightly overhanging edge
 
-    # === 4x SFP+ cages (front bottom edge, right 1/3) ===
-    sfp_w = 14.5
-    sfp_h = 14.0
-    sfp_d = 56.0  # SFP+ cages are deep
-    sfp_spacing = 18.5
-    sfp_start_x = 162.0
+        # Main housing (dark gray plastic)
+        meshes.append(cbox(matenet_w, matenet_d, matenet_h, C_PLASTIC_GRY,
+                          (mx, my, Z0 + matenet_h/2)))
+        # Front face detail (port opening)
+        meshes.append(cbox(matenet_w - 3, 1.5, matenet_h - 3, [40, 40, 43, 255],
+                          (mx, -0.5, Z0 + matenet_h/2)))
+        # Metal latch tabs on sides
+        meshes.append(cbox(0.5, matenet_d - 2, matenet_h - 1, C_METAL_DARK,
+                          (mx - matenet_w/2 + 0.5, my, Z0 + matenet_h/2)))
+        meshes.append(cbox(0.5, matenet_d - 2, matenet_h - 1, C_METAL_DARK,
+                          (mx + matenet_w/2 - 0.5, my, Z0 + matenet_h/2)))
+        # Top surface detail
+        meshes.append(cbox(matenet_w - 1, matenet_d - 1, 0.3, [80, 82, 85, 255],
+                          (mx, my, Z0 + matenet_h - 0.15)))
+
+        # Port number silkscreen
+        meshes.append(cbox(3, 1.5, 0.04, C_SILK,
+                          (mx, matenet_d + 2, Z0 + 0.02)))
+
+        # Status LEDs (1G green + 100M orange) behind connector
+        led_y = matenet_d + 5
+        meshes.append(cbox(1.6, 0.8, 1.0, C_LED_GREEN,
+                          (mx - 3.5, led_y, Z0 + 0.5)))
+        meshes.append(cbox(1.6, 0.8, 1.0, C_LED_ORANGE,
+                          (mx + 3.5, led_y, Z0 + 0.5)))
+
+    # ════════════════════════════════════════════
+    # 6. 4x SFP+ CAGES (front/bottom edge, right side)
+    #    10GBASE-R optical/DAC
+    # ════════════════════════════════════════════
+    sfp_w = 14.2    # cage width
+    sfp_d = 58.0    # cage depth (SFP+ module is long)
+    sfp_h = 13.5    # cage height
+    sfp_wall = 0.4
+    sfp_spacing = 17.5
+    sfp_x0 = 155.0
 
     for i in range(4):
-        x = sfp_start_x + i * sfp_spacing
-        z = BT/2 + sfp_d/2
-        # SFP+ metal cage
-        cage = create_box(sfp_w, sfp_h, sfp_d, [190, 190, 190, 255],
-                         position=(x, -sfp_h/2 + 2, z - 15))
-        meshes.append(cage)
-        # Cage opening (front)
-        cage_open = create_box(sfp_w - 2, sfp_h - 2, 3, [40, 40, 40, 255],
-                              position=(x, -sfp_h/2 + 1, -sfp_h/2 + 5))
-        meshes.append(cage_open)
-        # Cage top detail lines
-        for j in range(3):
-            line = create_box(sfp_w - 1, 0.3, 0.3, [160, 160, 160, 255],
-                             position=(x, -sfp_h/2 + 2 + sfp_h/2, z - 15 + j * 8))
-            meshes.append(line)
-        # SFP LED (bi-color)
-        led = create_box(1.5, 1.0, 1.5, [0, 255, 0, 200],
-                        position=(x, sfp_h/2 + 4, BT/2 + 1.0))
-        meshes.append(led)
+        sx = sfp_x0 + i * sfp_spacing
+        sy = sfp_d / 2 - 4  # extends back into board
+        sz = Z0 + sfp_h / 2
 
-    # === RJ45 Management Port (rear side, right area) ===
-    rj45_w = 16.0
-    rj45_h = 13.5
-    rj45_d = 22.0
-    rj45_x = BW - 30
-    rj45_y = BH + rj45_h/2 - 3
-    rj45_z = BT/2 + rj45_d/2
+        # Outer cage shell (stamped sheet metal)
+        # Top
+        meshes.append(cbox(sfp_w, sfp_d, sfp_wall, C_METAL, (sx, sy, sz + sfp_h/2 - sfp_wall/2)))
+        # Bottom
+        meshes.append(cbox(sfp_w, sfp_d, sfp_wall, C_METAL, (sx, sy, Z0 + sfp_wall/2)))
+        # Left side
+        meshes.append(cbox(sfp_wall, sfp_d, sfp_h, C_METAL, (sx - sfp_w/2 + sfp_wall/2, sy, sz)))
+        # Right side
+        meshes.append(cbox(sfp_wall, sfp_d, sfp_h, C_METAL, (sx + sfp_w/2 - sfp_wall/2, sy, sz)))
+        # Back wall
+        meshes.append(cbox(sfp_w, sfp_wall, sfp_h, C_METAL_DARK, (sx, sy + sfp_d/2, sz)))
 
-    # RJ45 metal shield
-    rj45 = create_box(rj45_w, rj45_h, rj45_d, [190, 190, 190, 255],
-                     position=(rj45_x, rj45_y, rj45_z))
-    meshes.append(rj45)
-    # RJ45 port opening
-    rj45_open = create_box(rj45_w - 4, 4, rj45_d - 6, [20, 20, 20, 255],
-                          position=(rj45_x, rj45_y + rj45_h/2, rj45_z - 3))
-    meshes.append(rj45_open)
-    # RJ45 LEDs (green + yellow)
-    rj45_led1 = create_box(2.5, 2.5, 2.5, [0, 255, 0, 180],
-                          position=(rj45_x - 6, rj45_y + rj45_h/2, rj45_z + rj45_d/2 - 3))
-    meshes.append(rj45_led1)
-    rj45_led2 = create_box(2.5, 2.5, 2.5, [255, 255, 0, 180],
-                          position=(rj45_x + 6, rj45_y + rj45_h/2, rj45_z + rj45_d/2 - 3))
-    meshes.append(rj45_led2)
+        # Front bezel (thicker metal frame)
+        meshes.append(cbox(sfp_w + 1, 2.0, sfp_h + 1, C_METAL, (sx, -3, sz)))
+        # Port opening (dark void)
+        meshes.append(cbox(sfp_w - 2, 2.5, sfp_h - 3, [15, 15, 15, 255], (sx, -3, sz)))
 
-    # === USB-C connector (rear side) ===
-    usbc_w = 9.0
-    usbc_h = 7.5
-    usbc_d = 3.2
-    usbc_x = BW - 65
-    usbc_y = BH + usbc_h/2 - 2
-    usbc_z = BT/2 + usbc_d/2
+        # Internal guide rails
+        meshes.append(cbox(sfp_w - 1, sfp_d - 5, 0.3, C_METAL_DARK,
+                          (sx, sy, Z0 + sfp_h * 0.3)))
+        meshes.append(cbox(sfp_w - 1, sfp_d - 5, 0.3, C_METAL_DARK,
+                          (sx, sy, Z0 + sfp_h * 0.7)))
 
-    usbc = create_box(usbc_w, usbc_h, usbc_d, [190, 190, 190, 255],
-                     position=(usbc_x, usbc_y, usbc_z))
-    meshes.append(usbc)
-    # USB-C opening
-    usbc_open = create_box(usbc_w - 2, 2, usbc_d - 0.5, [30, 30, 30, 255],
-                          position=(usbc_x, usbc_y + usbc_h/2, usbc_z))
-    meshes.append(usbc_open)
+        # Cage ventilation slots on top
+        for j in range(5):
+            meshes.append(cbox(sfp_w - 4, 1.5, 0.5, [170, 175, 180, 255],
+                              (sx, sy - sfp_d/4 + j * 8, sz + sfp_h/2 - 0.3)))
 
-    # === 12V DC Barrel Jack (rear side, right) ===
-    jack_r = 5.5
-    jack_h = 14.0
-    jack_x = BW - 10
-    jack_y = BH + 4
-    jack_z = BT/2 + jack_r
+        # EMI spring fingers on top edge
+        for j in range(6):
+            meshes.append(cbox(1.0, 0.3, 0.8, C_METAL_DARK,
+                              (sx - sfp_w/3 + j * (sfp_w * 0.6 / 5), -2, sz + sfp_h/2 + 0.3)))
 
-    jack_body = create_cylinder(jack_r, jack_h, [30, 30, 30, 255],
-                               position=(jack_x, jack_y, jack_z))
-    # Rotate to point outward (along Y)
-    rot = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
-    jack_body.apply_transform(rot)
-    jack_body.apply_translation([jack_x, jack_y, jack_z])
-    meshes.append(jack_body)
+        # SFP LED (bi-color under cage)
+        meshes.append(cbox(1.5, 0.8, 1.0, C_LED_GREEN,
+                          (sx, sfp_d - 2, Z0 + 0.5)))
 
-    # Jack metal ring
-    jack_ring = create_cylinder(jack_r + 0.5, 2, [180, 180, 180, 255])
-    jack_ring.apply_transform(rot)
-    jack_ring.apply_translation([jack_x, jack_y + jack_h/2, jack_z])
-    meshes.append(jack_ring)
+    # ════════════════════════════════════════════
+    # 7. RJ45 MANAGEMENT PORT (rear/top edge, right)
+    #    LAN8840, with integrated magnetics (ICM)
+    # ════════════════════════════════════════════
+    rj_w, rj_h, rj_d = 16.0, 13.5, 21.5
+    rj_x = BW - 28
+    rj_y = BH - rj_h/2 + 4  # overhangs rear edge
 
-    # === Power Switch (rear side) ===
-    sw_x = BW - 18
-    sw_y = BH + 2
-    sw_z = BT/2 + 3
-    pwr_sw = create_box(8, 4, 6, [200, 50, 50, 255], position=(sw_x, sw_y, sw_z))
-    meshes.append(pwr_sw)
-    # Switch toggle
-    toggle = create_box(3, 2, 3, [60, 60, 60, 255], position=(sw_x + 1, sw_y + 2.5, sw_z + 1))
-    meshes.append(toggle)
+    # Metal shield
+    meshes.append(cbox(rj_w, rj_h, rj_d, C_METAL, (rj_x, rj_y, Z0 + rj_d/2)))
+    # Top edge band
+    meshes.append(cbox(rj_w + 0.5, 0.5, rj_d, [175, 180, 185, 255],
+                      (rj_x, rj_y + rj_h/2, Z0 + rj_d/2)))
+    # Port opening
+    meshes.append(cbox(12, 3, 10, [15, 15, 15, 255],
+                      (rj_x, rj_y + rj_h/2, Z0 + 8)))
+    # RJ45 clip slot
+    meshes.append(cbox(8, 1, 2, [25, 25, 25, 255],
+                      (rj_x, rj_y + rj_h/2, Z0 + 14)))
+    # LEDs on RJ45 (green left, yellow right)
+    meshes.append(cbox(3, 2, 3, C_LED_GREEN,
+                      (rj_x - 5.5, rj_y + rj_h/2, Z0 + rj_d - 2.5)))
+    meshes.append(cbox(3, 2, 3, C_LED_YELLOW,
+                      (rj_x + 5.5, rj_y + rj_h/2, Z0 + rj_d - 2.5)))
 
-    # === 2x SMA connectors (rear side, for 1PPS) ===
-    for i, offset_x in enumerate([BW - 45, BW - 55]):
-        sma_body = create_cylinder(3.2, 8, [218, 165, 32, 255])  # Gold
-        sma_rot = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
-        sma_body.apply_transform(sma_rot)
-        sma_body.apply_translation([offset_x, BH + 4, BT/2 + 5])
-        meshes.append(sma_body)
-        # SMA center pin
-        sma_pin = create_cylinder(0.6, 4, [255, 215, 0, 255])
-        sma_pin.apply_transform(sma_rot)
-        sma_pin.apply_translation([offset_x, BH + 8, BT/2 + 5])
+    # ════════════════════════════════════════════
+    # 8. USB-C SERIAL PORT (rear edge)
+    # ════════════════════════════════════════════
+    usbc_x = BW * 0.45
+    usbc_y = BH + 1
+
+    # USB-C receptacle body
+    meshes.append(cbox(9.0, 7.5, 3.2, C_USB_METAL, (usbc_x, usbc_y, Z0 + 1.6)))
+    # Opening (rounded look via stacked boxes)
+    meshes.append(cbox(7.5, 2.0, 2.4, [20, 20, 22, 255], (usbc_x, BH + 4, Z0 + 1.6)))
+    # Rounded ends of USB-C
+    meshes.append(ccyl(1.1, 2.0, [20, 20, 22, 255], (usbc_x - 3.2, BH + 4, Z0 + 1.6), 12))
+    meshes.append(ccyl(1.1, 2.0, [20, 20, 22, 255], (usbc_x + 3.2, BH + 4, Z0 + 1.6), 12))
+    # USB TX/RX LEDs
+    meshes.append(cbox(1.2, 0.6, 0.8, C_LED_GREEN,
+                      (usbc_x - 6, BH - 3, Z0 + 0.4)))
+    meshes.append(cbox(1.2, 0.6, 0.8, C_LED_GREEN,
+                      (usbc_x + 6, BH - 3, Z0 + 0.4)))
+
+    # ════════════════════════════════════════════
+    # 9. 12V DC BARREL JACK (rear edge, far right)
+    # ════════════════════════════════════════════
+    bj_x = BW - 8
+    bj_y = BH + 2
+    bj_z = Z0 + 5.5
+
+    # Barrel body (cylindrical, horizontal pointing rear)
+    rot_x = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
+    barrel = cylinder(radius=5.5, height=14.0, sections=24)
+    barrel.apply_transform(rot_x)
+    barrel.apply_translation([bj_x, bj_y + 5, bj_z])
+    barrel.visual.face_colors = C_BARREL
+    meshes.append(barrel)
+
+    # Inner hole
+    barrel_hole = cylinder(radius=2.5, height=12.0, sections=16)
+    barrel_hole.apply_transform(rot_x)
+    barrel_hole.apply_translation([bj_x, bj_y + 8, bj_z])
+    barrel_hole.visual.face_colors = [15, 15, 15, 255]
+    meshes.append(barrel_hole)
+
+    # Center pin
+    barrel_pin = cylinder(radius=1.0, height=8, sections=12)
+    barrel_pin.apply_transform(rot_x)
+    barrel_pin.apply_translation([bj_x, bj_y + 7, bj_z])
+    barrel_pin.visual.face_colors = C_GOLD
+    meshes.append(barrel_pin)
+
+    # Mounting tabs
+    meshes.append(cbox(12, 4, 8, C_BARREL, (bj_x, bj_y - 2, bj_z)))
+
+    # ════════════════════════════════════════════
+    # 10. POWER SWITCH (slide switch, rear)
+    # ════════════════════════════════════════════
+    psw_x = BW - 22
+    psw_y = BH - 2
+
+    meshes.append(cbox(10, 5, 5, C_PLASTIC_BLK, (psw_x, psw_y, Z0 + 2.5)))
+    # Slider knob
+    meshes.append(cbox(3.5, 2.5, 3, [200, 200, 205, 255], (psw_x + 2, psw_y, Z0 + 5.2)))
+
+    # Power LEDs (green = OK, red = fault)
+    meshes.append(cbox(1.5, 0.8, 1.0, C_LED_GREEN, (psw_x - 7, psw_y, Z0 + 0.5)))
+    meshes.append(cbox(1.5, 0.8, 1.0, C_LED_RED, (psw_x - 10, psw_y, Z0 + 0.5)))
+
+    # ════════════════════════════════════════════
+    # 11. SMA CONNECTORS (1PPS IN/OUT, rear)
+    # ════════════════════════════════════════════
+    for sma_x, label in [(BW - 42, "OUT"), (BW - 54, "IN")]:
+        # SMA body
+        sma = cylinder(radius=3.2, height=9.5, sections=6)  # hex nut shape
+        sma.apply_transform(rot_x)
+        sma.apply_translation([sma_x, BH + 4, Z0 + 5])
+        sma.visual.face_colors = C_SMA_GOLD
+        meshes.append(sma)
+        # Center conductor
+        sma_pin = cylinder(radius=0.65, height=5, sections=12)
+        sma_pin.apply_transform(rot_x)
+        sma_pin.apply_translation([sma_x, BH + 9, Z0 + 5])
+        sma_pin.visual.face_colors = C_GOLD
         meshes.append(sma_pin)
+        # Insulator ring
+        sma_ins = cylinder(radius=2.0, height=1.5, sections=16)
+        sma_ins.apply_transform(rot_x)
+        sma_ins.apply_translation([sma_x, BH + 6, Z0 + 5])
+        sma_ins.visual.face_colors = [240, 240, 240, 255]  # White PTFE
+        meshes.append(sma_ins)
+        # Board-side flange
+        meshes.append(cbox(8, 3, 8, C_PCB_TOP, (sma_x, BH - 1, Z0 + 4)))
+        # Silkscreen label
+        meshes.append(cbox(4, 1.5, 0.04, C_SILK, (sma_x, BH - 5, Z0 + 0.02)))
 
-    # === PCIe OCuLink connector (rear side) ===
-    oculink = create_box(22, 8, 5, [40, 40, 40, 255],
-                        position=(70, BH + 2, BT/2 + 2.5))
-    meshes.append(oculink)
-    # Connector face
-    oculink_face = create_box(18, 2, 3, [80, 80, 80, 255],
-                             position=(70, BH + 5, BT/2 + 2.5))
-    meshes.append(oculink_face)
+    # ════════════════════════════════════════════
+    # 12. PCIe 2.0 OCuLink CONNECTOR (rear)
+    # ════════════════════════════════════════════
+    oc_x = 68
+    oc_y = BH - 2
 
-    # === Reset Button (rear side) ===
-    reset_btn = create_box(4, 4, 3, [200, 200, 200, 255],
-                          position=(BW - 80, BH + 1, BT/2 + 1.5))
-    meshes.append(reset_btn)
-    reset_cap = create_cylinder(1.5, 2, [255, 50, 50, 255],
-                               position=(BW - 80, BH + 1, BT/2 + 3.5))
-    meshes.append(reset_cap)
+    meshes.append(cbox(26, 8, 6, C_PLASTIC_BLK, (oc_x, oc_y, Z0 + 3)))
+    # Contact area
+    meshes.append(cbox(22, 2, 4, [60, 60, 63, 255], (oc_x, oc_y + 4, Z0 + 3)))
+    # Latch
+    meshes.append(cbox(6, 1, 2, C_METAL_DARK, (oc_x, oc_y + 5, Z0 + 6)))
 
-    # === DIP Switch (boot mode, 4-pin) ===
-    dip = create_box(10, 5, 4, [255, 50, 50, 255],
-                    position=(45, BH - 35, BT/2 + 2))
-    meshes.append(dip)
-    # DIP individual switches
+    # ════════════════════════════════════════════
+    # 13. RESET BUTTON (rear area)
+    # ════════════════════════════════════════════
+    rst_x = BW * 0.55
+    rst_y = BH - 5
+
+    # Button base
+    meshes.append(cbox(4.5, 4.5, 2.5, C_PLASTIC_BLK, (rst_x, rst_y, Z0 + 1.25)))
+    # Button cap (red)
+    meshes.append(ccyl(1.5, 2, C_LED_RED, (rst_x, rst_y, Z0 + 3.2), 16))
+
+    # ════════════════════════════════════════════
+    # 14. DIP SWITCH (4-pin, boot mode)
+    # ════════════════════════════════════════════
+    dip_x = 48
+    dip_y = BH - 38
+
+    # DIP body
+    meshes.append(cbox(11, 5.2, 3.5, C_RED_SW, (dip_x, dip_y, Z0 + 1.75)))
+    # Individual rockers
     for i in range(4):
-        sw = create_box(1.5, 2, 1.5, [255, 255, 255, 255],
-                       position=(42 + i * 2.2, BH - 35, BT/2 + 4.2))
-        meshes.append(sw)
+        meshes.append(cbox(1.8, 2.0, 1.5, [230, 230, 235, 255],
+                          (dip_x - 4 + i * 2.54, dip_y, Z0 + 3.6)))
+    # Label
+    meshes.append(cbox(8, 1, 0.04, C_SILK, (dip_x, dip_y - 4, Z0 + 0.02)))
 
-    # === Expansion Header (RPi compatible, right side) ===
-    exp_w = 52.0
-    exp_h = 5.0
-    exp_d = 8.5
-    exp = create_box(exp_w, exp_h, exp_d, [30, 30, 30, 255],
-                    position=(BW - 50, BH - 45, BT/2 + exp_d/2))
-    meshes.append(exp)
-    # Header pins (gold)
+    # ════════════════════════════════════════════
+    # 15. EXPANSION HEADER (2x20, RPi compatible)
+    # ════════════════════════════════════════════
+    exp_x = BW - 52
+    exp_y = BH - 48
+
+    # Plastic housing
+    meshes.append(cbox(51, 5.1, 8.5, C_PLASTIC_BLK, (exp_x, exp_y, Z0 + 4.25)))
+    # Gold pins
     for i in range(20):
         for j in range(2):
-            pin = create_box(0.6, 0.6, 8.5, [218, 165, 32, 255],
-                            position=(BW - 74 + i * 2.54, BH - 46 + j * 2.54, BT/2 + exp_d/2))
-            meshes.append(pin)
+            meshes.append(cbox(0.5, 0.5, 11, C_GOLD,
+                              (exp_x - 24 + i * 2.54, exp_y - 1.27 + j * 2.54, Z0 + 2)))
 
-    # === JTAG Header (10-pin) ===
-    jtag = create_box(13, 5, 8, [30, 30, 30, 255],
-                     position=(BW - 30, BH - 55, BT/2 + 4))
-    meshes.append(jtag)
+    # ════════════════════════════════════════════
+    # 16. JTAG HEADER (10-pin, 0.05" pitch)
+    # ════════════════════════════════════════════
+    jtag_x = BW - 25
+    jtag_y = BH - 62
 
-    # === LAN8870 PHY chips (7x, one per T1 port) ===
+    meshes.append(cbox(13.5, 5.1, 6, C_PLASTIC_BLK, (jtag_x, jtag_y, Z0 + 3)))
+    for i in range(5):
+        for j in range(2):
+            meshes.append(cbox(0.4, 0.4, 8, C_GOLD,
+                              (jtag_x - 5 + i * 2.54, jtag_y - 1.27 + j * 2.54, Z0 + 1.5)))
+
+    # ════════════════════════════════════════════
+    # 17. LAN8870 PHY CHIPS (7x, QFN packages)
+    # ════════════════════════════════════════════
     for i in range(7):
-        x = 18.0 + i * 20.5
-        y = 35
-        phy = create_box(8, 8, 1.2, [30, 30, 30, 255],
-                        position=(x, y, BT/2 + 0.6))
-        meshes.append(phy)
+        px = matenet_x0 + i * matenet_spacing
+        py = 32
 
-    # === LAN8840 PHY chip (management port) ===
-    lan8840 = create_box(7, 7, 1.0, [30, 30, 30, 255],
-                        position=(BW - 30, BH - 25, BT/2 + 0.5))
-    meshes.append(lan8840)
+        # QFN package
+        meshes.append(cbox(7, 7, 0.9, C_IC, (px, py, Z0 + 0.45)))
+        # Exposed pad (bottom, visible as ground plane)
+        meshes.append(cbox(4.5, 4.5, 0.05, C_COPPER, (px, py, Z0 + 0.02)))
+        # Pin-1 mark
+        meshes.append(ccyl(0.4, 0.06, C_SILK, (px - 2.8, py + 2.8, Z0 + 0.93), 12))
 
-    # === DC/DC converters and inductors ===
-    # Large inductors
-    inductor_positions = [
-        (20, BH - 15), (40, BH - 15), (60, BH - 15),
-        (20, BH - 30), (40, BH - 30),
+    # ════════════════════════════════════════════
+    # 18. LAN8840 PHY (management port, QFN)
+    # ════════════════════════════════════════════
+    meshes.append(cbox(6, 6, 0.9, C_IC, (BW - 30, BH - 22, Z0 + 0.45)))
+    meshes.append(ccyl(0.35, 0.06, C_SILK, (BW - 33, BH - 19, Z0 + 0.93), 12))
+
+    # ════════════════════════════════════════════
+    # 19. MEMORY: QSPI NOR Flash (8MB) + eMMC NAND (4GB)
+    # ════════════════════════════════════════════
+    # NOR Flash (SOIC-8 or similar)
+    meshes.append(cbox(5, 4, 1.2, C_IC, (cx - 22, cy + 12, Z0 + 0.6)))
+    meshes.append(cbox(3.5, 2.5, 0.05, C_IC_MARK, (cx - 22, cy + 12, Z0 + 1.23)))
+
+    # eMMC NAND (BGA)
+    meshes.append(cbox(12, 16, 1.3, C_IC, (cx - 24, cy - 3, Z0 + 0.65)))
+    meshes.append(cbox(9, 12, 0.05, C_IC_MARK, (cx - 24, cy - 3, Z0 + 1.33)))
+
+    # ════════════════════════════════════════════
+    # 20. CLOCK OSCILLATORS
+    # ════════════════════════════════════════════
+    # 156.25 MHz (SerDes ref clock)
+    meshes.append(cbox(5, 3.2, 1.5, C_METAL, (cx + 22, cy + 12, Z0 + 0.75)))
+    meshes.append(cbox(3.5, 1.5, 0.05, [220, 220, 225, 255], (cx + 22, cy + 12, Z0 + 1.53)))
+
+    # 25 MHz (PHY ref clock)
+    meshes.append(cbox(5, 3.2, 1.5, C_METAL, (cx + 22, cy - 10, Z0 + 0.75)))
+    meshes.append(cbox(3.5, 1.5, 0.05, [220, 220, 225, 255], (cx + 22, cy - 10, Z0 + 1.53)))
+
+    # ════════════════════════════════════════════
+    # 21. DC/DC CONVERTERS & INDUCTORS
+    # ════════════════════════════════════════════
+    inductor_pos = [
+        (18, BH - 14, 6.5, 6.5, 4.0),
+        (32, BH - 14, 6.5, 6.5, 4.0),
+        (50, BH - 14, 5.5, 5.5, 3.5),
+        (18, BH - 28, 5.5, 5.5, 3.5),
+        (35, BH - 28, 4.5, 4.5, 3.0),
+        (68, BH - 14, 4.5, 4.5, 3.0),
     ]
-    for (ix, iy) in inductor_positions:
-        ind = create_box(6, 6, 3, [50, 50, 50, 255],
-                        position=(ix, iy, BT/2 + 1.5))
-        meshes.append(ind)
+    for ix, iy, iw, ih, id_ in inductor_pos:
+        meshes.append(cbox(iw, ih, id_, C_INDUCTOR, (ix, iy, Z0 + id_/2)))
+        # Ferrite top marking
+        meshes.append(cbox(iw - 1, ih - 1, 0.05, [70, 70, 73, 255], (ix, iy, Z0 + id_ + 0.02)))
 
-    # === Capacitors and small SMD components (decorative) ===
+    # DC/DC converter ICs (near inductors)
+    dcdc_pos = [(25, BH - 21), (45, BH - 21), (58, BH - 21)]
+    for dx, dy in dcdc_pos:
+        meshes.append(cbox(5, 4, 0.9, C_IC, (dx, dy, Z0 + 0.45)))
+
+    # ════════════════════════════════════════════
+    # 22. CAPACITORS (MLCCs, distributed)
+    # ════════════════════════════════════════════
     np.random.seed(42)
-    for _ in range(40):
-        cx = np.random.uniform(15, BW - 15)
-        cy = np.random.uniform(25, BH - 10)
-        # Avoid main chip area
-        if abs(cx - chip_x) < 15 and abs(cy - chip_y) < 15:
+    cap_positions = []
+    for _ in range(60):
+        cx_ = np.random.uniform(12, BW - 12)
+        cy_ = np.random.uniform(20, BH - 8)
+        # Avoid main IC, connectors, other components
+        if abs(cx_ - cx) < 14 and abs(cy_ - cy) < 14:
             continue
-        cw = np.random.uniform(1.0, 2.5)
-        ch = np.random.uniform(0.8, 1.5)
-        cap = create_box(cw, ch, 0.8, [80, 60, 40, 255],
-                        position=(cx, cy, BT/2 + 0.4))
-        meshes.append(cap)
+        if cy_ < 15 and cx_ < 150:  # MATEnet area
+            continue
+        if cy_ < sfp_d and cx_ > 148:  # SFP area
+            continue
+        cap_positions.append((cx_, cy_))
 
-    # === Crystal oscillators ===
-    # 156.25 MHz osc
-    osc1 = create_box(5, 3.2, 1.5, [190, 190, 190, 255],
-                     position=(chip_x + 20, chip_y + 10, BT/2 + 0.75))
-    meshes.append(osc1)
-    # 25 MHz osc
-    osc2 = create_box(5, 3.2, 1.5, [190, 190, 190, 255],
-                     position=(chip_x + 20, chip_y - 10, BT/2 + 0.75))
-    meshes.append(osc2)
+    for cx_, cy_ in cap_positions[:45]:
+        size = np.random.choice([0.6, 1.0, 1.6, 2.0])
+        h = size * 0.5
+        color = C_CAP_BROWN if np.random.random() > 0.3 else C_CAP_GRAY
+        meshes.append(cbox(size, size * 0.6, h, color, (cx_, cy_, Z0 + h/2)))
 
-    # === QSPI NOR Flash (8MB) ===
-    nor_flash = create_box(6, 5, 1.2, [30, 30, 30, 255],
-                          position=(chip_x - 25, chip_y + 10, BT/2 + 0.6))
-    meshes.append(nor_flash)
+    # Larger electrolytic / tantalum caps near power
+    for ex, ey in [(12, BH - 8), (BW - 15, BH - 15), (85, BH - 10)]:
+        meshes.append(cbox(3.5, 3, 2.5, [40, 35, 30, 255], (ex, ey, Z0 + 1.25)))
+        # Polarity marking
+        meshes.append(cbox(3.5, 0.5, 2.5, [180, 160, 100, 255], (ex, ey + 1.5, Z0 + 1.25)))
 
-    # === eMMC NAND (4GB) ===
-    emmc = create_box(12, 16, 1.4, [30, 30, 30, 255],
-                     position=(chip_x - 25, chip_y - 5, BT/2 + 0.7))
-    meshes.append(emmc)
+    # ════════════════════════════════════════════
+    # 23. RESISTOR ARRAYS & SMALL ICs
+    # ════════════════════════════════════════════
+    for rx, ry in [(cx + 12, cy + 20), (cx - 12, cy + 20),
+                    (cx + 15, cy - 18), (cx - 15, cy - 15)]:
+        meshes.append(cbox(3.2, 1.6, 0.6, C_IC, (rx, ry, Z0 + 0.3)))
 
-    # === Power status LEDs (rear side, near power switch) ===
-    led_colors = [
-        [0, 255, 0, 200],    # 5V green
-        [0, 255, 0, 200],    # 3.3V green
-        [0, 255, 0, 200],    # 1.8V green
-        [0, 255, 0, 200],    # 1.1V green
-        [0, 255, 0, 200],    # 0.9V green
-    ]
-    for i, color in enumerate(led_colors):
-        led = create_box(1.5, 0.8, 1.0, color,
-                        position=(BW - 25 + i * 4, BH - 10, BT/2 + 0.5))
-        meshes.append(led)
+    # ZL40241 Clock buffer
+    meshes.append(cbox(5, 5, 0.9, C_IC, (cx + 30, cy - 2, Z0 + 0.45)))
 
-    # === Board status LEDs ===
-    status_led1 = create_box(1.5, 0.8, 1.0, [0, 255, 0, 200],
-                            position=(BW - 85, BH - 5, BT/2 + 0.5))
-    meshes.append(status_led1)
-    status_led2 = create_box(1.5, 0.8, 1.0, [255, 255, 0, 200],
-                            position=(BW - 88, BH - 5, BT/2 + 0.5))
-    meshes.append(status_led2)
+    # MCP2200 UART-to-USB
+    meshes.append(cbox(5, 5, 0.9, C_IC, (usbc_x, BH - 12, Z0 + 0.45)))
 
-    # === Ground shield (copper area under SFP+) ===
-    shield = create_box(75, 50, 0.1, [180, 160, 100, 100],
-                       position=(BW - 45, 30, BT/2 + 0.06))
-    meshes.append(shield)
+    # ════════════════════════════════════════════
+    # 24. POWER STATUS LEDs (5x green, near power area)
+    # ════════════════════════════════════════════
+    for i, label in enumerate(["0.9V", "1.1V", "1.8V", "3.3V", "5V"]):
+        lx = BW - 50 + i * 6
+        ly = BH - 10
+        meshes.append(cbox(1.5, 0.8, 1.0, C_LED_GREEN, (lx, ly, Z0 + 0.5)))
+        meshes.append(cbox(3, 1, 0.04, C_SILK, (lx, ly - 2, Z0 + 0.02)))
+
+    # Board status LEDs (green + yellow)
+    meshes.append(cbox(1.5, 0.8, 1.0, C_LED_GREEN, (rst_x - 8, rst_y, Z0 + 0.5)))
+    meshes.append(cbox(1.5, 0.8, 1.0, C_LED_YELLOW, (rst_x - 11, rst_y, Z0 + 0.5)))
+
+    # ════════════════════════════════════════════
+    # 25. SILKSCREEN DETAILS (decorative)
+    # ════════════════════════════════════════════
+    # Component outlines near chips
+    for i in range(7):
+        px = matenet_x0 + i * matenet_spacing
+        meshes.append(cbox(8, 0.15, 0.04, C_SILK, (px, 28, Z0 + 0.02)))
+        meshes.append(cbox(8, 0.15, 0.04, C_SILK, (px, 36, Z0 + 0.02)))
+
+    # Board outline marking
+    meshes.append(cbox(BW - 20, 0.2, 0.04, C_SILK, (BW/2, 12, Z0 + 0.02)))
+    meshes.append(cbox(0.2, 30, 0.04, C_SILK, (10, BH/2, Z0 + 0.02)))
+
+    # Test points (scattered copper dots)
+    tp_positions = [(30, 50), (55, 65), (80, 45), (100, 90), (130, 70),
+                    (150, 100), (170, 85), (100, 120), (130, 115)]
+    for tx, ty in tp_positions:
+        meshes.append(ccyl(0.8, 0.08, C_COPPER, (tx, ty, Z0 + 0.04), 12))
+
+    # ════════════════════════════════════════════
+    # 26. GROUND SHIELD / COPPER POUR (under SFP area)
+    # ════════════════════════════════════════════
+    meshes.append(cbox(70, 45, 0.04, [0, 75, 28, 200],
+                      (BW - 42, 32, Z0 + 0.02)))
 
     return meshes
 
 
 def main():
-    print("Building EVB-LAN9692-LM 3D model...")
+    print("Building EVB-LAN9692-LM 3D model v2...")
     meshes = build_board()
+    print(f"  Total mesh parts: {len(meshes)}")
 
-    print(f"  Total meshes: {len(meshes)}")
-
-    # Combine all meshes
     scene = trimesh.Scene()
-    for i, mesh in enumerate(meshes):
-        scene.add_geometry(mesh, node_name=f"part_{i:03d}")
+    for i, m in enumerate(meshes):
+        scene.add_geometry(m, node_name=f"p{i:03d}")
 
-    # Export as GLB
-    output_path = "/home/kim/EVB-LAN9692-LM.glb"
-    scene.export(output_path, file_type='glb')
-    print(f"  Exported to: {output_path}")
+    out = "/home/kim/lan9692-model/EVB-LAN9692-LM.glb"
+    scene.export(out, file_type='glb')
+    print(f"  Exported: {out}")
 
-    # Also export as GLTF for inspection
-    gltf_path = "/home/kim/EVB-LAN9692-LM.gltf"
-    scene.export(gltf_path, file_type='gltf')
-    print(f"  Exported to: {gltf_path}")
-
-    # Print board summary
-    print("\n=== EVB-LAN9692-LM Board Summary ===")
-    print("  Dimensions: 214 x 150 x 1.535 mm")
-    print("  Main IC: LAN9692 (356-ball FCBGA, 17x17mm)")
-    print("  Front ports: 7x MATEnet (1000BASE-T1) + 4x SFP+ (10G)")
-    print("  Rear: RJ45, USB-C, DC jack, OCuLink, 2x SMA, Reset")
+    import os
+    size = os.path.getsize(out)
+    print(f"  File size: {size / 1024:.0f} KB")
+    print(f"  Board: 214 x 150 x 1.535 mm")
+    print(f"  Components: 7x MATEnet, 4x SFP+, RJ45, USB-C, DC jack, 2x SMA")
     print("  Done!")
 
 

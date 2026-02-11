@@ -292,7 +292,7 @@
 
             // Camera
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
-            camera.position.set(107, -150, 200);
+            camera.position.set(107, -120, 180);
 
             // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -490,11 +490,11 @@
         }
 
         // Expose functions to window
-        window.resetView = () => animateCamera([107, -150, 200]);
-        window.viewFront = () => animateCamera([107, -180, 40], [107, 0, 5]);
-        window.viewRear = () => animateCamera([107, 330, 40], [107, 150, 5]);
-        window.viewTop = () => animateCamera([107, 75, 280]);
-        window.viewSide = () => animateCamera([350, 75, 60]);
+        window.resetView = () => animateCamera([107, -120, 180]);
+        window.viewFront = () => animateCamera([107, -100, 30], [107, 20, 5]);
+        window.viewRear = () => animateCamera([107, 260, 30], [107, 150, 5]);
+        window.viewTop = () => animateCamera([107, 75, 250]);
+        window.viewSide = () => animateCamera([320, 75, 50]);
 
         window.toggleWireframe = () => {
             wireframeMode = !wireframeMode;
