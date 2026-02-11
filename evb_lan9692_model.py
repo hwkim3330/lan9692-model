@@ -411,11 +411,11 @@ def build_board():
 
     # Plastic housing
     meshes.append(cbox(51, 5.1, 8.5, C_PLASTIC_BLK, (exp_x, exp_y, Z0 + 4.25)))
-    # Gold pins (extend mostly upward, only ~1mm below PCB)
+    # Gold pins
     for i in range(20):
         for j in range(2):
             meshes.append(cbox(0.5, 0.5, 11, C_GOLD,
-                              (exp_x - 24 + i * 2.54, exp_y - 1.27 + j * 2.54, Z0 + 4.5)))
+                              (exp_x - 24 + i * 2.54, exp_y - 1.27 + j * 2.54, Z0 + 2)))
 
     # ════════════════════════════════════════════
     # 16. JTAG HEADER (10-pin, 0.05" pitch)
@@ -424,11 +424,10 @@ def build_board():
     jtag_y = BH - 62
 
     meshes.append(cbox(13.5, 5.1, 6, C_PLASTIC_BLK, (jtag_x, jtag_y, Z0 + 3)))
-    # Gold pins (extend mostly upward)
     for i in range(5):
         for j in range(2):
             meshes.append(cbox(0.4, 0.4, 8, C_GOLD,
-                              (jtag_x - 5 + i * 2.54, jtag_y - 1.27 + j * 2.54, Z0 + 3.5)))
+                              (jtag_x - 5 + i * 2.54, jtag_y - 1.27 + j * 2.54, Z0 + 1.5)))
 
     # ════════════════════════════════════════════
     # 17. LAN8870 PHY CHIPS (7x, QFN packages)
